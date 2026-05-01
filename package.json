@@ -1,0 +1,58 @@
+{
+  "name": "superhuman-mcp-cli",
+  "version": "1.0.0",
+  "description": "Agent-native CLI wrapper for the Superhuman Mail MCP server",
+  "type": "module",
+  "bin": {
+    "superhuman": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "test": "vitest run",
+    "test:e2e": "tsx src/cli.ts e2e self-check --to \"$SUPERHUMAN_E2E_SELF_EMAIL\" --confirm-self-send",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "superhuman",
+    "mcp",
+    "cli",
+    "mail"
+  ],
+  "author": "maximilianwuehr-afk",
+  "license": "MIT",
+  "homepage": "https://github.com/maximilianwuehr-afk/superhuman-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maximilianwuehr-afk/superhuman-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maximilianwuehr-afk/superhuman-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@superhuman/mcp-mail": "^1.0.2",
+    "commander": "^14.0.3",
+    "zod": "^4.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

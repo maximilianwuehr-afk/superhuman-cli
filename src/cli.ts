@@ -1,14 +1,11 @@
 #!/usr/bin/env node
+import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
 import { buildToolArgs, parseList, parseTimeout } from "./args.js";
 import { getAuthStatus, login, logout } from "./auth.js";
 import { ALIASES, aliasArgsFromQuestion } from "./aliases.js";
 import { CliError, toError } from "./errors.js";
-import { assertDoctor, runDoctor } from "./doctor.js";
-import { runSelfCheck } from "./e2e.js";
-import { callTool, listTools } from "./mcp.js";
-import { renderCallResult, renderDoctor, renderTool, renderTools, resolveOutputMode, writeValue } from "./output.js";
-import { writeSchemaMarkdown } from "./schema-doc.js";
+import { renderAuthStatus, renderCallResult, renderDoctor, renderTool, renderTools, resolveOutputMode, writeValue } from "./output.js";
 import { validateSafety } from "./safety.js";
 import type { CliGlobalOptions } from "./types.js";
 
@@ -50,9 +47,9 @@ auth
       const mode = resolveOutputMode(globals);
       if (options.check) {
         const count = await login(timeoutMs(globals));
-        writeValue({ ...status, connected: true, tools: count }, mode);
+        renderAuthStatus({ ...status, connected: true, tools: count }, mode, globals);
       } else {
-        writeValue(status, mode);
+        renderAuthStatus(status, mode, globals);
       }
     });
   });
@@ -64,8 +61,14 @@ auth
   .option("--no-input", "fail instead of prompting")
   .action(async (options: { force?: boolean; input?: boolean }) => {
     await run(async (globals) => {
-      const removed = await logout({ force: options.force, noInput: options.input === false });
-      if (!globals.quiet) process.stdout.write(`Removed ${removed} token file(s).\n`);
+      const result = await logout({
+        force: options.force,
+        noInput: options.input === false,
+        confirm: confirmLogout,
+      });
+      if (!globals.quiet) {
+        process.stdout.write(result.cancelled ? "Logout cancelled.\n" : `Removed ${result.removed} token file(s).\n`);
+      }
     });
   });
 
@@ -74,6 +77,7 @@ program
   .description("Check local install, OAuth state, and live MCP connectivity.")
   .action(async () => {
     await run(async (globals) => {
+      const { assertDoctor, runDoctor } = await import("./doctor.js");
       const report = await runDoctor({ timeoutMs: timeoutMs(globals) });
       renderDoctor(report, resolveOutputMode(globals));
       assertDoctor(report);
@@ -86,8 +90,10 @@ program
   .option("-o, --output <file>", "write markdown inventory to a file")
   .action(async (options: { output?: string }) => {
     await run(async (globals) => {
+      const { listTools } = await import("./mcp.js");
       const tools = await listTools(timeoutMs(globals));
       if (options.output) {
+        const { writeSchemaMarkdown } = await import("./schema-doc.js");
         await writeSchemaMarkdown(options.output, tools);
         if (!globals.quiet) process.stderr.write(`Wrote ${options.output}\n`);
       }
@@ -100,6 +106,7 @@ program
   .description("Describe one MCP tool and its parameters.")
   .action(async (toolName: string) => {
     await run(async (globals) => {
+      const { listTools } = await import("./mcp.js");
       const tools = await listTools(timeoutMs(globals));
       const tool = tools.find((item) => item.name === toolName);
       if (!tool) throw new CliError(`Unknown tool: ${toolName}`, 2);
@@ -116,7 +123,6 @@ program
   .option("--confirm-send", "required for send_draft/send_email")
   .option("--allow-recipient <email>", "allowed send recipient; repeat or comma-separate", collect, [])
   .option("--safety-recipient <email>", "recipient expected in an opaque draft send; repeat or comma-separate", collect, [])
-  .option("--no-input", "disable prompts")
   .action(async (toolName: string, options: CallCommandOptions) => {
     await run(async (globals) => {
       const args = await buildToolArgs(options);
@@ -125,7 +131,6 @@ program
         args: { ...args, safety_recipients: parseList(options.safetyRecipient) },
         confirmSend: options.confirmSend,
         allowRecipients: parseList(options.allowRecipient),
-        noInput: options.input === false,
       });
 
       if (options.dryRun) {
@@ -133,6 +138,7 @@ program
         return;
       }
 
+      const { callTool } = await import("./mcp.js");
       const result = await callTool(toolName, args, timeoutMs(globals));
       renderCallResult(result, resolveOutputMode(globals));
     });
@@ -147,8 +153,7 @@ for (const alias of ALIASES) {
     .option("-n, --dry-run", "print the tool call without executing it")
     .option("--confirm-send", "required for send aliases")
     .option("--allow-recipient <email>", "allowed send recipient; repeat or comma-separate", collect, [])
-    .option("--safety-recipient <email>", "recipient expected in an opaque draft send; repeat or comma-separate", collect, [])
-    .option("--no-input", "disable prompts");
+    .option("--safety-recipient <email>", "recipient expected in an opaque draft send; repeat or comma-separate", collect, []);
 
   if (alias.name === "query") {
     command.argument("[question...]", "natural-language email/calendar question");
@@ -164,7 +169,6 @@ for (const alias of ALIASES) {
         args: { ...args, safety_recipients: parseList(options.safetyRecipient) },
         confirmSend: options.confirmSend,
         allowRecipients: parseList(options.allowRecipient),
-        noInput: options.input === false,
       });
 
       if (options.dryRun) {
@@ -172,6 +176,7 @@ for (const alias of ALIASES) {
         return;
       }
 
+      const { callTool } = await import("./mcp.js");
       const result = await callTool(alias.tool, args, timeoutMs(globals));
       renderCallResult(result, resolveOutputMode(globals));
     });
@@ -187,6 +192,7 @@ program
   .option("--confirm-self-send", "explicitly allow the self-send test")
   .action(async (options: { to: string; from?: string; confirmSelfSend?: boolean }) => {
     await run(async (globals) => {
+      const { runSelfCheck } = await import("./e2e.js");
       const result = await runSelfCheck({
         to: options.to,
         from: options.from,
@@ -209,7 +215,6 @@ interface CallCommandOptions {
   confirmSend?: boolean;
   allowRecipient?: string[];
   safetyRecipient?: string[];
-  input?: boolean;
 }
 
 function collect(value: string, previous: string[]): string[] {
@@ -236,5 +241,23 @@ function reportError(value: unknown): void {
   if (error instanceof CliError && error.hint) process.stderr.write(`${error.hint}\n`);
   if (!(error instanceof CliError) && process.env.DEBUG) {
     process.stderr.write(`${error.stack ?? ""}\n`);
+  }
+}
+
+async function confirmLogout(): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    throw new CliError(
+      "Cannot confirm OAuth token removal because stdin is not interactive.",
+      2,
+      "Run interactively, pass --force, or pass --no-input to fail immediately.",
+    );
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await rl.question("Remove Superhuman OAuth tokens? Type yes to confirm: ");
+    return answer.trim().toLowerCase() === "yes";
+  } finally {
+    rl.close();
   }
 }

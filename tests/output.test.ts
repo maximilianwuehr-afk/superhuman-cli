@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderAuthStatus, writeValue } from "../src/output.js";
+import { renderAuthStatus, renderCallResult, writeValue } from "../src/output.js";
 
 describe("output", () => {
   afterEach(() => {
@@ -48,5 +48,37 @@ describe("output", () => {
     expect(output).toContain("tool: create_or_update_draft");
     expect(output).toContain("arguments:");
     expect(output).not.toContain('"tool"');
+  });
+
+  it("sanitizes control characters in terminal call output", () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    renderCallResult(
+      {
+        content: [{ type: "text", text: "hello\u001b]52;c;secret\u0007\r\nnext" }],
+      },
+      "human",
+    );
+
+    const output = write.mock.calls.map((call) => call[0]).join("");
+    expect(output).toBe("hello\\x1b]52;c;secret\\x07\\x0d\nnext\n");
+    expect(output).not.toContain("\u001b");
+    expect(output).not.toContain("\u0007");
+    expect(output).not.toContain("\r");
+  });
+
+  it("preserves raw content in json call output", () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const text = "hello\u001b]52;c;secret\u0007\r";
+
+    renderCallResult(
+      {
+        content: [{ type: "text", text }],
+      },
+      "json",
+    );
+
+    const output = write.mock.calls.map((call) => call[0]).join("");
+    expect(JSON.parse(output).content[0].text).toBe(text);
   });
 });

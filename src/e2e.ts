@@ -1,4 +1,4 @@
-import { callTool, listTools } from "./mcp.js";
+import { callSessionTool, listSessionTools, withMcp } from "./mcp.js";
 import { CliError } from "./errors.js";
 import { validateSafety } from "./safety.js";
 
@@ -21,41 +21,43 @@ export async function runSelfCheck(options: {
     throw new CliError("E2E self-check only allows the configured self email.", 3);
   }
 
-  const tools = await listTools(options.timeoutMs);
-  const names = new Set(tools.map((tool) => tool.name));
-  const requiredTools = ["query_email_and_calendar", "create_or_update_draft", "send_draft"];
-  for (const name of requiredTools) {
-    if (!names.has(name)) throw new Error(`Required tool missing: ${name}`);
-  }
+  return withMcp({ timeoutMs: options.timeoutMs }, async (session) => {
+    const tools = await listSessionTools(session);
+    const names = new Set(tools.map((tool) => tool.name));
+    const requiredTools = ["query_email_and_calendar", "create_or_update_draft", "send_draft"];
+    for (const name of requiredTools) {
+      if (!names.has(name)) throw new Error(`Required tool missing: ${name}`);
+    }
 
-  const subject = `Superhuman CLI self-check ${new Date().toISOString()}`;
-  const draftArgs = {
-    type: "new",
-    to: [options.to],
-    subject,
-    body: "This is an automated Superhuman CLI self-check email sent only to itself.",
-  };
-  if (options.from) {
-    Object.assign(draftArgs, { from: options.from });
-  }
+    const subject = `Superhuman CLI self-check ${new Date().toISOString()}`;
+    const draftArgs = {
+      type: "new",
+      to: [options.to],
+      subject,
+      body: "This is an automated Superhuman CLI self-check email sent only to itself.",
+    };
+    if (options.from) {
+      Object.assign(draftArgs, { from: options.from });
+    }
 
-  const draft = await callTool("create_or_update_draft", draftArgs, options.timeoutMs);
-  const sendArgs = inferSendArgs(draft);
+    const draft = await callSessionTool(session, "create_or_update_draft", draftArgs);
+    const sendArgs = inferSendArgs(draft);
 
-  validateSafety({
-    toolName: "send_draft",
-    args: { ...sendArgs, safety_recipients: [options.to] },
-    confirmSend: true,
-    allowRecipients: [options.to],
+    validateSafety({
+      toolName: "send_draft",
+      args: { ...sendArgs, safety_recipients: [options.to] },
+      confirmSend: true,
+      allowRecipients: [options.to],
+    });
+
+    const send = await callSessionTool(session, "send_draft", sendArgs);
+
+    return {
+      subject,
+      draft,
+      send,
+    };
   });
-
-  const send = await callTool("send_draft", sendArgs, options.timeoutMs);
-
-  return {
-    subject,
-    draft,
-    send,
-  };
 }
 
 function inferSendArgs(draftResult: unknown): Record<string, unknown> {

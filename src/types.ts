@@ -29,7 +29,6 @@ export interface SafetyOptions {
   args: unknown;
   confirmSend?: boolean;
   allowRecipients?: string[];
-  noInput?: boolean;
 }
 
 export interface ToolCallResult {

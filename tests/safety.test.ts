@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CliError } from "../src/errors.js";
 import { extractEmails, validateSafety } from "../src/safety.js";
 
 describe("safety", () => {
@@ -51,5 +52,20 @@ describe("safety", () => {
         allowRecipients: ["me@example.com"],
       }),
     ).not.toThrow();
+  });
+
+  it("points opaque draft sends to --safety-recipient", () => {
+    try {
+      validateSafety({
+        toolName: "send_draft",
+        args: { draft_id: "draft_123" },
+        confirmSend: true,
+        allowRecipients: ["me@example.com"],
+      });
+      throw new Error("Expected validateSafety to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).hint).toMatch(/--safety-recipient/);
+    }
   });
 });

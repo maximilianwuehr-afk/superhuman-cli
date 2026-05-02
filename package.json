@@ -47,7 +47,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@superhuman/mcp-mail": "^1.0.2",
     "commander": "^14.0.3",
-    "zod": "^4.4.1"
+    "mcp-remote": "^0.1.38"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

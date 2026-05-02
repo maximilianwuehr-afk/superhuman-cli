@@ -33,10 +33,13 @@ export function validateSafety(options: SafetyOptions): void {
 
   const emails = extractEmails(options.args);
   if (emails.length === 0) {
+    const hint = options.toolName === "send_draft" && hasKey(options.args, "draft_id")
+      ? "Pass --safety-recipient email@example.com so the CLI can verify the draft recipient against the allowlist."
+      : "Pass explicit to/cc/bcc recipient fields so the CLI can enforce the allowlist.";
     throw new CliError(
       `No recipient email addresses were found in the ${options.toolName} arguments.`,
       3,
-      "Pass explicit to/cc/bcc recipient fields so the CLI can enforce the allowlist.",
+      hint,
     );
   }
 
@@ -70,6 +73,14 @@ function walk(value: unknown, visitor: (value: unknown) => void): void {
   if (typeof value === "object" && value !== null) {
     for (const item of Object.values(value)) walk(item, visitor);
   }
+}
+
+function hasKey(value: unknown, key: string): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  if (Array.isArray(value)) return value.some((item) => hasKey(item, key));
+  const record = value as Record<string, unknown>;
+  if (record[key] !== undefined) return true;
+  return Object.values(record).some((item) => hasKey(item, key));
 }
 
 function normalizeEmails(values: string[]): string[] {

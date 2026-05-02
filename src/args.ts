@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { CliError } from "./errors.js";
 
+const FORBIDDEN_PATH_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
+
 export function parseKeyValue(value: string): [string, unknown] {
   const index = value.indexOf("=");
   if (index <= 0) {
@@ -37,17 +39,48 @@ export function setDeep(target: Record<string, unknown>, dottedKey: string, valu
   if (parts.length === 0) {
     throw new CliError(`Invalid empty argument key`, 2);
   }
-
-  let cursor: Record<string, unknown> = target;
-  for (const part of parts.slice(0, -1)) {
-    const next = cursor[part];
-    if (!isRecord(next)) {
-      cursor[part] = {};
-    }
-    cursor = cursor[part] as Record<string, unknown>;
+  const forbidden = parts.find((part) => FORBIDDEN_PATH_SEGMENTS.has(part));
+  if (forbidden) {
+    throw new CliError(`Invalid argument key segment: ${forbidden}`, 2);
+  }
+  if (isArrayIndex(parts[0]!)) {
+    throw new CliError(`Invalid argument key: ${dottedKey}`, 2, "Top-level --arg keys must be object properties.");
   }
 
-  cursor[parts[parts.length - 1]!] = value;
+  let cursor: Record<string, unknown> | unknown[] = target;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
+    const isLast = index === parts.length - 1;
+
+    if (isLast) {
+      setAt(cursor, part, value);
+      return;
+    }
+
+    const nextPart = parts[index + 1]!;
+    const existing = getAt(cursor, part);
+    const expectedArray = isArrayIndex(nextPart);
+
+    if (existing === undefined) {
+      const next = expectedArray ? [] : {};
+      setAt(cursor, part, next);
+      cursor = next;
+      continue;
+    }
+
+    if (expectedArray) {
+      if (!Array.isArray(existing)) {
+        throw new CliError(`Argument path conflict at ${parts.slice(0, index + 1).join(".")}`, 2);
+      }
+      cursor = existing;
+      continue;
+    }
+
+    if (!isRecord(existing)) {
+      throw new CliError(`Argument path conflict at ${parts.slice(0, index + 1).join(".")}`, 2);
+    }
+    cursor = existing;
+  }
 }
 
 export async function readJsonInput(source?: string): Promise<Record<string, unknown>> {
@@ -121,4 +154,29 @@ async function readStdin(): Promise<string> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isArrayIndex(value: string): boolean {
+  return /^(0|[1-9]\d*)$/.test(value);
+}
+
+function getAt(container: Record<string, unknown> | unknown[], key: string): unknown {
+  if (Array.isArray(container)) {
+    if (!isArrayIndex(key)) {
+      throw new CliError(`Invalid array argument key: ${key}`, 2, "Use numeric segments for array items, e.g. labels.0=Inbox.");
+    }
+    return container[Number(key)];
+  }
+  return container[key];
+}
+
+function setAt(container: Record<string, unknown> | unknown[], key: string, value: unknown): void {
+  if (Array.isArray(container)) {
+    if (!isArrayIndex(key)) {
+      throw new CliError(`Invalid array argument key: ${key}`, 2, "Use numeric segments for array items, e.g. labels.0=Inbox.");
+    }
+    container[Number(key)] = value;
+    return;
+  }
+  container[key] = value;
 }

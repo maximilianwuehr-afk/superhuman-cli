@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getAuthStatus } from "./auth.js";
 import { CliError } from "./errors.js";
-import { listTools } from "./mcp.js";
+import { DEFAULT_MCP_COMMAND, listTools } from "./mcp.js";
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -74,7 +74,7 @@ function checkNodeVersion(): DoctorCheck {
 }
 
 async function checkExecutable(): Promise<DoctorCheck> {
-  const command = process.env.SUPERHUMAN_MCP_COMMAND || "npx";
+  const command = process.env.SUPERHUMAN_MCP_COMMAND || DEFAULT_MCP_COMMAND;
   try {
     await execFileAsync(command, ["--version"], { timeout: 10_000 });
     return { name: "mcp-command", ok: true, message: `${command} is available` };
